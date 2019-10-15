@@ -57,7 +57,8 @@ if __name__ == "__main__":
     # Load images
     im = cv2.imread("warwick_sample_5/testA_1.bmp", -1)
     im_mask = cv2.imread("warwick_sample_5/testA_1_anno.bmp", -1)
-
+    print(im)
+    print(im_mask)
     # Draw grid lines
     draw_grid(im, 50)
     draw_grid(im_mask, 50)
