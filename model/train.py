@@ -1,24 +1,33 @@
 import numpy as np
 from skimage.io import imread
 from skimage.transform import resize
+from skimage import exposure
+from torch.utils.data import DataLoader
+from torchvision import transforms, utils
 
 import os
 
 #Network
+from torchvision import models
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from torchsummary import summary
+import torch.optim as optim
 
-#plot
 import matplotlib.pyplot as plt
 from IPython.display import clear_output
 
-#performance measurement
+# internal utilities
 from time import time
 from model.utils.Evaluation import F1_score
-from model.utils.data_augmentation import UnNormalize
-def train(model, opt, loss_fn, epochs, data_tr,data_val, data_testA,data_testB):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(device)
+from model.utils.data_augmentation import *
+from model.utils.dataset import CustomTensorDataset
+from model.model import UNet,SegNet
+
+
+def train(model, opt, loss_fn, epochs, data_tr,data_val, data_testA,data_testB,device):
+
     criterion = nn.CrossEntropyLoss()
     X_val, Y_val = next(iter(data_val))
     X_testA, Y_testA = next(iter(data_testA))
@@ -173,13 +182,24 @@ def train(model, opt, loss_fn, epochs, data_tr,data_val, data_testA,data_testB):
         plt.suptitle('%d / %d - loss: %f - time:%f - F1TestA:%f - F1TestB:%f' % (epoch+1, epochs, avg_loss,toc-tic,F1_scores_macro['testA_mean'][-1],F1_scores_macro['testB_mean'][-1]))
         plt.show()
     return F1_scores_macro
-
+#Helper functions
 def to_numpy(images,masks):
     X = np.array(images, np.float32)
     Y = np.array(masks, np.float32)
     print('Loaded %d images' % len(X))
     print('Loaded %d masks' % len(Y))
     return X,Y
+def apply_transform(image,mask,sigma):
+    trans_img = []
+    trans_masks = []
+    for idx,img in enumerate(image):
+        #merge to apply elastic deformation
+        im_merge = np.dstack((img, mask[idx]))
+        im_merge_t = elastic_transform(im_merge, im_merge.shape[1] * 2, im_merge.shape[1] * 0.08 * sigma, im_merge.shape[1] * 0.08 * sigma)
+        #split it afterwards
+        trans_img.append(im_merge_t[...,:-1])
+        trans_masks.append(im_merge_t[...,-1]>0)
+    return trans_img,trans_masks
 
 if __name__ == "__main__":
     os.chdir('image root')
@@ -219,3 +239,94 @@ if __name__ == "__main__":
     X_testA,Y_testA = to_numpy(images_testA,masks_testA)
     X_testB,Y_testB = to_numpy(images_testB,masks_testB)
 
+    if True:
+        X_deformed1,Y_deformed1 = apply_transform(X_train,Y_train,sigma=3)
+        print('Elastic deformation 1 done')
+
+        X_deformed2,Y_deformed2 = apply_transform(X_train,Y_train,sigma=2)
+        print('Elastic deformation 2 done')
+
+        X_train=np.concatenate((X_train,X_deformed1))
+        Y_train=np.concatenate((Y_train,Y_deformed1))
+        X_train=np.concatenate((X_train,X_deformed2))
+        Y_train=np.concatenate((Y_train,Y_deformed2))
+
+    #Transform masks into two channel images
+    Y_train[Y_train>0] = 1
+    Y_train_re = np.zeros((Y_train.shape[0], Y_train.shape[1], Y_train.shape[2], 2),np.float32)
+    for i in range(2):
+        Y_train_re[:,:, :, i][Y_train == i] = 1
+
+    #Apply adaptive histogram equalization
+    if True:
+        X_train = np.array([exposure.equalize_adapthist(x, clip_limit=0.01) for x in X_train])
+        X_testA = np.array([exposure.equalize_adapthist(x, clip_limit=0.01) for x in X_testA])
+        X_testB = np.array([exposure.equalize_adapthist(x, clip_limit=0.01) for x in X_testB])
+
+    #Create Dataloaders and apply data augmentation on the images
+
+    batch_size = 16
+    transform = Compose([           ToPILImage(),
+                                    RandomHorizontalFlip(),
+                                    RandomVerticalFlip(),
+                                    RandomCrop(img_size),
+                                    ToTensor()
+                                ])
+    img_trans = transforms.Compose([
+                                    #transforms.ToPILImage(),
+                                    #transforms.RandomGrayscale(),
+                                    #transforms.ColorJitter(brightness=0, contrast=0.2, saturation=0.0, hue=.2),
+                                    #transforms.ColorJitter(brightness=0, contrast=0, saturation=0, hue=0),
+                                    #transforms.ToTensor()
+
+    ])
+    mean = np.mean(X_train,axis=(0,1,2))
+    std = np.std(X_train,axis=(0,1,2))
+
+    ix = np.random.choice(len(X_train), len(X_train), False)
+    #print(ix)
+    tr, val = np.split(ix, [int(len(X_train)/4*3)])
+    #transnorm = transforms.Compose([transforms.Normalize(mean=mean,std=std)])
+
+    train = CustomTensorDataset(tensors=(torch.from_numpy(np.rollaxis(X_train[tr], 3, 1)), torch.from_numpy(np.rollaxis(Y_train_re[tr],3,1))),transform= transform, normalize=True, mean=mean, std=std,img_trans=img_trans)
+    validation = CustomTensorDataset(tensors=(torch.from_numpy(np.rollaxis(X_train[val], 3, 1)), torch.from_numpy(np.rollaxis(Y_train_re[val],3,1))),transform= transform,normalize = True, mean = mean, std=std,img_trans=img_trans)
+
+    data_tr = DataLoader(train, batch_size=batch_size, shuffle=True)
+    data_val = DataLoader(validation, batch_size=batch_size, shuffle=False)
+
+    testA = CustomTensorDataset(tensors=(torch.from_numpy(np.rollaxis(X_testA, 3, 1)), torch.from_numpy(np.rollaxis(Y_testA[...,np.newaxis],3,1))), normalize=True, mean=mean, std=std)
+    data_testA = DataLoader(testA, batch_size=batch_size, shuffle=False)
+
+    testB = CustomTensorDataset(tensors=(torch.from_numpy(np.rollaxis(X_testB, 3, 1)), torch.from_numpy(np.rollaxis(Y_testB[...,np.newaxis],3,1))), normalize=True, mean=mean, std=std)
+    data_testB = DataLoader(testB, batch_size=batch_size, shuffle=False)
+
+    #set device (eiter cpu or gpu)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(device)
+
+    use = 'segnet'
+    if use=='segnet':
+        model = SegNet().to(device)
+        summary(model, (3, 256, 256))
+    else:
+        model = UNet().to(device)
+        summary(model, (3, 256, 256))
+
+    F1_scores=train(model, optim.AdamW(model.parameters(),lr=0.0001), 100, data_tr,data_val, data_testA,data_testB,device)
+
+    plt.rcParams['figure.figsize'] = [18, 12]
+
+
+ig, (ax0, ax1, ax2, ax3) = plt.subplots(nrows=4, sharex=True);
+ax0.errorbar(range(len(F1_scores['train_mean'])), F1_scores['train_mean'], yerr=F1_scores['train_std'], fmt='-o')
+ax0.set_title('F1-Score train')
+
+ax1.errorbar(range(len(F1_scores['val_mean'])), F1_scores['val_mean'], yerr=F1_scores['val_std'], fmt='-o')
+ax1.set_title('F1-Score val')
+
+ax2.errorbar(range(len(F1_scores['testA_mean'])), F1_scores['testA_mean'], yerr=F1_scores['testA_std'], fmt='-o')
+ax2.set_title('F1-Score TestA')
+
+ax3.errorbar(range(len(F1_scores['testB_mean'])), F1_scores['testB_mean'], yerr=F1_scores['testB_std'], fmt='-o')
+ax3.set_title('F1-Score TestB')
+plt.show()
