@@ -1,8 +1,25 @@
+import numpy as np
+
+#Network
+import torch
+import torch.nn as nn
+
+#plot
+import matplotlib.pyplot as plt
+from IPython.display import clear_output
+
+#performance measurement
+from time import time
+from model.utils.Evaluation import F1_score
 
 def train(model, opt, loss_fn, epochs, data_tr,data_val, data_testA,data_testB):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(device)
     #criterion = nn.BCELoss() # not possible due to multiple channels
     criterion = nn.CrossEntropyLoss()
     X_val, Y_val = next(iter(data_val))
+    X_testA, Y_testA = next(iter(data_testA))
+    X_testB, Y_testB = next(iter(data_testB))
 
     loss_hist={'train':[],'test':[]}
     F1_scores_macro = {'train_mean':[],'train_std':[],'val_mean':[],'val_std':[],'testA_mean':[],'testA_std':[],'testB_mean':[],'testB_std':[]}
@@ -61,8 +78,11 @@ def train(model, opt, loss_fn, epochs, data_tr,data_val, data_testA,data_testB):
         for X_batch_val, Y_batch_val in data_testA:
             Y_pred = torch.sigmoid(model(X_batch_val.to(device))).detach().cpu()
             for idx_,y_pred in enumerate(Y_pred):
-                f1_testA_ep_macro.append(F1_score(torch.argmax(Y_batch_val[idx_],dim=0),torch.argmax(y_pred,dim=0)))
+
+                f1_testA_ep_macro.append(F1_score(Y_batch_val[idx_],torch.argmax(y_pred,dim=0)))
         
+  
+
         f1_temp2=np.array(f1_testA_ep_macro)
         F1_scores_macro['testA_mean'].append(np.mean(f1_temp2))
         F1_scores_macro['testA_std'].append(np.std(f1_temp2))
@@ -73,7 +93,7 @@ def train(model, opt, loss_fn, epochs, data_tr,data_val, data_testA,data_testB):
         for X_batch_val, Y_batch_val in data_testB:
             Y_pred = torch.sigmoid(model(X_batch_val.to(device))).detach().cpu()
             for idx_,y_pred in enumerate(Y_pred):
-                f1_testB_ep_macro.append(F1_score(torch.argmax(Y_batch_val[idx_],dim=0),torch.argmax(y_pred,dim=0)))
+                f1_testB_ep_macro.append(F1_score(Y_batch_val[idx_],torch.argmax(y_pred,dim=0)))
                 #f1_testB_ep_binary.append(F1_score(Y_batch_val[idx_],y_pred,avg='binary'))
         
         f1_temp2=np.array(f1_testB_ep_macro)
@@ -87,40 +107,64 @@ def train(model, opt, loss_fn, epochs, data_tr,data_val, data_testA,data_testB):
         Plotting after each epoch
         '''
         Y_hat = model(X_val.to(device)).detach().cpu()
+        Y_hatA = model(X_testA.to(device)).detach().cpu()
+        Y_hatB = model(X_testB.to(device)).detach().cpu()
+        
       
         #print('Y_hat.shape',Y_hat.shape)
         clear_output(wait=True)
         plt.rcParams['figure.figsize'] = [18, 6]
-        plt.subplot(1,6,1)
+        rows, cols = 3,7
+
+        plt.subplot(1,cols,1)
         plt.plot(list(range(1,len(loss_hist['train'])+1)),loss_hist['train'],'-',color='cornflowerblue')
         plt.plot(list(range(1,len(loss_hist['test'])+1)),loss_hist['test'],'-',color='orange')
 
         plt.xlabel('epoch')
         plt.ylabel('loss')
-
-        for k in range(2,7):
-            plt.subplot(5, 6, k)
+        for k in range(2,4):
+            plt.subplot(rows, cols, k)
             plt.imshow(np.rollaxis(X_val[k].numpy(), 0, 3), cmap='gray')
-            plt.title('Real')
+            plt.title('Real - val')
             plt.axis('off')
 
-            plt.subplot(5, 6, k+6)
+            plt.subplot(rows, cols, k+7)
             plt.imshow(np.rollaxis(Y_val[k,1].numpy(), 0, 1), cmap='gray')
             plt.title('Original Mask')
             plt.axis('off')
             
-            plt.subplot(5, 6, k+12)
-            plt.imshow(Y_hat[k, 0], cmap='gray')
-            plt.title('Channel 0')
+            plt.subplot(rows, cols, k+14)
+            plt.imshow(torch.argmax(Y_hat[k],dim=0), cmap='gray')
+            plt.title('Prediction mask')
             plt.axis('off')
-            
-            plt.subplot(5, 6, k+18)
-            plt.imshow(Y_hat[k, 1], cmap='gray')
-            plt.title('Channel 1')
+        for k in range(4,6):
+            plt.subplot(rows, cols, k)
+            plt.imshow(np.rollaxis(X_testA[k].numpy(), 0, 3), cmap='gray')
+            plt.title('Real - TestA')
             plt.axis('off')
 
-            plt.subplot(5, 6, k+24)
-            plt.imshow(torch.argmax(Y_hat[k],dim=0), cmap='gray')
+            plt.subplot(rows, cols, k+7)
+            plt.imshow(np.rollaxis(Y_testA[k,0].numpy(), 0, 1), cmap='gray')
+            plt.title('Original Mask')
+            plt.axis('off')
+
+            plt.subplot(rows, cols, k+14)
+            plt.imshow(torch.argmax(Y_hatA[k],dim=0), cmap='gray')
+            plt.title('Prediction mask')
+            plt.axis('off')
+        for k in range(6,8):
+            plt.subplot(rows, cols, k)
+            plt.imshow(np.rollaxis(X_testB[k].numpy(), 0, 3), cmap='gray')
+            plt.title('Real - TestB')
+            plt.axis('off')
+
+            plt.subplot(rows, cols, k+7)
+            plt.imshow(np.rollaxis(Y_testB[k,0].numpy(), 0, 1), cmap='gray')
+            plt.title('Original Mask')
+            plt.axis('off')
+            
+            plt.subplot(rows, cols, k+14)
+            plt.imshow(torch.argmax(Y_hatB[k],dim=0), cmap='gray')
             plt.title('Prediction mask')
             plt.axis('off')
         plt.suptitle('%d / %d - loss: %f - time:%f - F1TestA:%f - F1TestB:%f' % (epoch+1, epochs, avg_loss,toc-tic,F1_scores_macro['testA_mean'][-1],F1_scores_macro['testB_mean'][-1]))
