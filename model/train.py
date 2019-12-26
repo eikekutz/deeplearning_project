@@ -1,4 +1,8 @@
 import numpy as np
+from skimage.io import imread
+from skimage.transform import resize
+
+import os
 
 #Network
 import torch
@@ -11,16 +15,15 @@ from IPython.display import clear_output
 #performance measurement
 from time import time
 from model.utils.Evaluation import F1_score
-
+from model.utils.data_augmentation import UnNormalize
 def train(model, opt, loss_fn, epochs, data_tr,data_val, data_testA,data_testB):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
-    #criterion = nn.BCELoss() # not possible due to multiple channels
     criterion = nn.CrossEntropyLoss()
     X_val, Y_val = next(iter(data_val))
     X_testA, Y_testA = next(iter(data_testA))
     X_testB, Y_testB = next(iter(data_testB))
-
+    unnorm = UnNormalize(mean,std)
     loss_hist={'train':[],'test':[]}
     F1_scores_macro = {'train_mean':[],'train_std':[],'val_mean':[],'val_std':[],'testA_mean':[],'testA_std':[],'testB_mean':[],'testB_std':[]}
     for epoch in range(epochs):
@@ -109,7 +112,7 @@ def train(model, opt, loss_fn, epochs, data_tr,data_val, data_testA,data_testB):
         Y_hat = model(X_val.to(device)).detach().cpu()
         Y_hatA = model(X_testA.to(device)).detach().cpu()
         Y_hatB = model(X_testB.to(device)).detach().cpu()
-        
+
       
         #print('Y_hat.shape',Y_hat.shape)
         clear_output(wait=True)
@@ -124,7 +127,7 @@ def train(model, opt, loss_fn, epochs, data_tr,data_val, data_testA,data_testB):
         plt.ylabel('loss')
         for k in range(2,4):
             plt.subplot(rows, cols, k)
-            plt.imshow(np.rollaxis(X_val[k].numpy(), 0, 3), cmap='gray')
+            plt.imshow(np.rollaxis(unnorm(X_val[k].clone()).numpy(), 0, 3), cmap='gray')
             plt.title('Real - val')
             plt.axis('off')
 
@@ -139,7 +142,7 @@ def train(model, opt, loss_fn, epochs, data_tr,data_val, data_testA,data_testB):
             plt.axis('off')
         for k in range(4,6):
             plt.subplot(rows, cols, k)
-            plt.imshow(np.rollaxis(X_testA[k].numpy(), 0, 3), cmap='gray')
+            plt.imshow(np.rollaxis(unnorm(X_testA[k].clone()).numpy(), 0, 3), cmap='gray')
             plt.title('Real - TestA')
             plt.axis('off')
 
@@ -154,7 +157,7 @@ def train(model, opt, loss_fn, epochs, data_tr,data_val, data_testA,data_testB):
             plt.axis('off')
         for k in range(6,8):
             plt.subplot(rows, cols, k)
-            plt.imshow(np.rollaxis(X_testB[k].numpy(), 0, 3), cmap='gray')
+            plt.imshow(np.rollaxis(unnorm(X_testB[k].clone()).numpy(), 0, 3), cmap='gray')
             plt.title('Real - TestB')
             plt.axis('off')
 
@@ -170,3 +173,49 @@ def train(model, opt, loss_fn, epochs, data_tr,data_val, data_testA,data_testB):
         plt.suptitle('%d / %d - loss: %f - time:%f - F1TestA:%f - F1TestB:%f' % (epoch+1, epochs, avg_loss,toc-tic,F1_scores_macro['testA_mean'][-1],F1_scores_macro['testB_mean'][-1]))
         plt.show()
     return F1_scores_macro
+
+def to_numpy(images,masks):
+    X = np.array(images, np.float32)
+    Y = np.array(masks, np.float32)
+    print('Loaded %d images' % len(X))
+    print('Loaded %d masks' % len(Y))
+    return X,Y
+
+if __name__ == "__main__":
+    os.chdir('image root')
+    #read images
+    images_train,images_testA,images_testB = [],[],[]
+    masks_train,masks_testA,masks_testB = [],[],[]
+
+
+    read_size=300
+    img_size = 256
+
+    size_read=(read_size,read_size) # original size is 576x576 -> maybe increas it for later tests
+    size=(img_size,img_size)
+    for root, dirs, files in os.walk('warwick_data/'):
+        for f in files:
+            if not f.endswith('anno.bmp') and not f.endswith('csv') and f.startswith('train'):
+                img_path = f
+                images_train.append(resize(imread(os.path.join(root, img_path)), size_read, mode='constant',anti_aliasing=True))
+                
+                mask_path = f[:-4]+'_anno.bmp'
+                masks_train.append(resize(imread(os.path.join(root, mask_path)), size_read, mode='constant',anti_aliasing=True)>0)
+            elif not f.endswith('anno.bmp') and not f.endswith('csv') and f.startswith('testA'):
+                img_path = f
+                images_testA.append(resize(imread(os.path.join(root, img_path)), size, mode='constant',anti_aliasing=True))
+                
+                mask_path = f[:-4]+'_anno.bmp'
+                masks_testA.append(resize(imread(os.path.join(root, mask_path)), size, mode='constant',anti_aliasing=True)>0)
+            elif not f.endswith('anno.bmp') and not f.endswith('csv') and f.startswith('testB'):
+                img_path = f
+                images_testB.append(resize(imread(os.path.join(root, img_path)), size, mode='constant',anti_aliasing=True))
+                
+                mask_path = f[:-4]+'_anno.bmp'
+                masks_testB.append(resize(imread(os.path.join(root, mask_path)), size, mode='constant',anti_aliasing=True)>0)
+    
+    #convert all the images to numpy arrays
+    X_train,Y_train = to_numpy(images_train,masks_train)
+    X_testA,Y_testA = to_numpy(images_testA,masks_testA)
+    X_testB,Y_testB = to_numpy(images_testB,masks_testB)
+
