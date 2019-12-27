@@ -8,7 +8,7 @@ Gland Segmentation Challenge Contest [Competition dataset](https://warwick.ac.uk
 
 ### Cell Segmentation
 
-![Screenshot 2019-12-27 at 14.07.13](https://github.com/eikekutz/deeplearning_project/blob/master/Users/ek/DTU/3-semester/Data_sec/Notes/images/Prediction_result.png)
+![Screenshot 2019-12-27 at 14.07.13](https://raw.githubusercontent.com/eikekutz/deeplearning_project/master/images/Prediction_result.png )
 
 The whole implementation for the segmentation can be seen in the [Cell segmentation notebook](https://github.com/eikekutz/deeplearning_project/blob/master/Cell_segmentation.ipynb)
 
