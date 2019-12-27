@@ -16,5 +16,9 @@ The network model and the training script can be seen individually in [model fol
 
 The data augmentation and all the helper functions are located in [data_utils](https://github.com/eikekutz/deeplearning_project/tree/master/data_utils)
 
-###GAN based data augmentation approach
+### GAN based data augmentation approach
+
+Initial approach for GAN stage 1 after: [Towards Adversarial Retinal Image Synthesis](https://arxiv.org/abs/1701.08974)
+
+The GAN approach is only working for one image, yet. Training on multiple images lead to mode collapse.
 
