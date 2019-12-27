@@ -1,33 +1,12 @@
-from skimage.filters import sobel
-from skimage.measure import label
-from skimage.segmentation import slic, join_segmentations
-from skimage.morphology import watershed
-from skimage.color import label2rgb
-from skimage import data
-import skimage.feature
-import numpy as np
+from skimage.measure import label, regionprops
+from sklearn.metrics import f1_score
 
-def ws(image_pred,th=80.0):
-    image = (image_pred[0, 0].numpy()*100).astype(int)
-    #print(image.max())
-    # Make segmentation using edge-detection and watershed.
-    edges = sobel(image)
-    #plt.imshow(edges)
-    # Identify some background and foreground pixels from the intensity values.
-    # These pixels are used as seeds for watershed.
-    markers = np.zeros_like(image)
-    foreground, background = 1,2
-    markers[image < th] = foreground
-    markers[image >= th] = background
-    
-    #plt.imshow(markers)
+def F1_score(Y_val, Y_pred):
 
-    ws = watershed(edges, markers)
-    seg1 = label(ws == foreground)
+  Y_val_label=Y_val.numpy()
+  Y_pred_label=Y_pred.numpy()
 
-    # return the segmentations.
-    return ws,seg1
-def closest_center(node, nodes):
-    nodes = np.asarray(nodes)
-    dist_2 = np.sum((nodes - node)**2, axis=1)
-    return np.argmin(dist_2)
+  F1_score=f1_score(Y_val.reshape(-1), Y_pred.reshape(-1), average='macro')
+
+
+  return F1_score

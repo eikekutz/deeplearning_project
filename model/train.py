@@ -20,9 +20,9 @@ from IPython.display import clear_output
 
 # internal utilities
 from time import time
-from model.utils.Evaluation import F1_score
-from model.utils.data_augmentation import *
-from model.utils.dataset import CustomTensorDataset
+from data_utils.evaluation import F1_score
+from data_utils.data_augmentation import *
+from data_utils.dataset import CustomTensorDataset
 from model.model import UNet,SegNet
 
 
