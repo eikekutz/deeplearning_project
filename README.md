@@ -14,7 +14,7 @@ The whole implementation for the segmentation can be seen in the [Cell segmentat
 
 The network model and the training script can be seen individually in [model folder](https://github.com/eikekutz/deeplearning_project/tree/master/model)
 
-The data augmentation and all the helper functions are located in []()
+The data augmentation and all the helper functions are located in [data_utils](https://github.com/eikekutz/deeplearning_project/tree/master/data_utils)
 
 ###GAN based data augmentation approach
 
